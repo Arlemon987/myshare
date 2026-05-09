@@ -1,0 +1,8 @@
+{
+  "name": "drive-share",
+  "version": "1.0.0",
+  "dependencies": {
+    "googleapis": "^140.0.1",
+    "formidable": "^3.5.1"
+  }
+}
