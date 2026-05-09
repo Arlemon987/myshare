@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Download File</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="box">
+
+  <h1>Download File</h1>
+
+  <button onclick="downloadFile()">
+    Download
+  </button>
+
+</div>
+
+<script>
+
+function downloadFile(){
+
+  const params =
+    new URLSearchParams(window.location.search);
+
+  const id = params.get("id");
+
+  window.location =
+    "/api/download?id=" + id;
+}
+
+</script>
+
+</body>
+</html>
