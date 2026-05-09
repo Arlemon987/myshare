@@ -1,64 +1,125 @@
 import { google } from "googleapis";
-import formidable from "formidable";
-import fs from "fs";
+
+const auth = new google.auth.GoogleAuth({
+  credentials: JSON.parse(
+    process.env.GOOGLE_SERVICE_ACCOUNT
+  ),
+  scopes: [
+    "https://www.googleapis.com/auth/drive"
+  ],
+});
 
 export const config = {
   api: {
-    bodyParser: false,
+    bodyParser: {
+      sizeLimit: "50mb",
+    },
   },
 };
 
-const auth = new google.auth.GoogleAuth({
-  credentials: JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT),
-  scopes: ["https://www.googleapis.com/auth/drive"],
-});
-
-const folderId =
-  process.env.GOOGLE_DRIVE_FOLDER_ID;
-
 export default async function handler(req, res) {
 
-  const form = formidable({});
+  try {
 
-  form.parse(req, async (err, fields, files) => {
+    if(req.method !== "POST"){
+      return res.status(405).end();
+    }
 
-    try {
+    const drive = google.drive({
+      version:"v3",
+      auth: await auth.getClient(),
+    });
 
-      const file = files.file[0];
+    const chunks = [];
 
-      const drive = google.drive({
-        version: "v3",
-        auth: await auth.getClient(),
-      });
+    for await (const chunk of req) {
+      chunks.push(chunk);
+    }
 
-      const uploaded =
-        await drive.files.create({
+    const buffer =
+      Buffer.concat(chunks);
 
-        requestBody: {
-          name: file.originalFilename,
-          parents: [folderId],
-        },
+    const boundary =
+      req.headers["content-type"]
+      .split("boundary=")[1];
 
-        media: {
-          mimeType: file.mimetype,
-          body: fs.createReadStream(file.filepath),
-        },
+    const parts =
+      buffer.toString().split(boundary);
 
-        fields: "id",
-      });
+    const filePart =
+      parts.find(part =>
+        part.includes("filename=")
+      );
 
-      res.status(200).json({
-        link:
-          req.headers.origin +
-          "/download.html?id=" +
-          uploaded.data.id,
-      });
+    if(!filePart){
 
-    } catch(e){
-
-      res.status(500).json({
-        error: e.message
+      return res.status(400).json({
+        error:"No file uploaded"
       });
     }
-  });
+
+    const start =
+      filePart.indexOf("\r\n\r\n") + 4;
+
+    const end =
+      filePart.lastIndexOf("\r\n");
+
+    const fileBuffer =
+      Buffer.from(
+        filePart.substring(start, end),
+        "binary"
+      );
+
+    const match =
+      filePart.match(/filename="(.+)"/);
+
+    const filename =
+      match ? match[1] : "file";
+
+    const uploaded =
+      await drive.files.create({
+
+      requestBody:{
+        name:filename,
+        parents:[
+          process.env.GOOGLE_DRIVE_FOLDER_ID
+        ],
+      },
+
+      media:{
+        mimeType:"application/octet-stream",
+        body:ReadableFromBuffer(fileBuffer),
+      },
+
+      fields:"id",
+    });
+
+    return res.status(200).json({
+
+      success:true,
+
+      link:
+        req.headers.origin +
+        "/download.html?id=" +
+        uploaded.data.id,
+    });
+
+  } catch(e){
+
+    return res.status(500).json({
+      error:e.message
+    });
+  }
+}
+
+function ReadableFromBuffer(buffer){
+
+  const { Readable } = require("stream");
+
+  const stream = new Readable();
+
+  stream.push(buffer);
+  stream.push(null);
+
+  return stream;
 }
